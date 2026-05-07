@@ -252,7 +252,10 @@
       <h2>Controle de Vistos</h2>
       <p>Insira sua chave de acesso para continuar</p>
       <span class="login-error" id="loginError">Chave invalida. Tente novamente.</span>
-      <input type="password" id="loginKey" placeholder="Chave de acesso" onkeydown="if(event.key==='Enter')fazerLogin()">
+      <div style="position:relative;">
+        <input type="password" id="loginKey" placeholder="Chave de acesso" onkeydown="if(event.key==='Enter')fazerLogin()" style="padding-right:2.5rem;">
+        <span onclick="toggleSenha()" style="position:absolute;right:0.8rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:0.85rem;user-select:none;" id="toggleSenhaBtn">mostrar</span>
+      </div>
       <button class="btn btn-primary" style="width:100%;padding:0.75rem;" onclick="fazerLogin()">Entrar</button>
     </div>
   </div>
@@ -275,20 +278,7 @@
 
     <div class="table-wrapper">
       <table>
-        <thead>
-          <tr>
-            <th>Nome Completo</th>
-            <th>Email</th>
-            <th>Grupo</th>
-            <th>Status</th>
-            <th>DS-160</th>
-            <th>Codigo</th>
-            <th>Confirmacao</th>
-            <th class="admin-only hidden">Pagamento</th>
-            <th>Data</th>
-            <th>Pasta</th>
-            <th class="admin-only hidden">Acoes</th>
-          </tr>
+        <thead id="tableHead">
         </thead>
         <tbody id="tableBody">
           <tr><td colspan="11" class="loading">Carregando...</td></tr>
@@ -350,6 +340,9 @@
   <div class="toast" id="toast"></div>
 
   <script>
+    // ============================================
+    // CONFIGURAÇÃO - ALTERE AQUI
+    // ============================================
     const API_URL = 'https://script.google.com/macros/s/AKfycbyVrsvdhZIdsfjKmqfIGcu1aVzXCalEB-OH-d1UwCtGQFZvUIrZx0G2GmjtFpvLLL3SOg/exec';
 
     const params = new URLSearchParams(window.location.search);
@@ -372,8 +365,7 @@
     })();
 
     async function tentarLogin(token, fromModal) {
-      // Mostra loader
-      document.getElementById('loader').style.display = 'flex';
+      showLoader();
       document.getElementById('loginOverlay').style.display = 'none';
 
       try {
@@ -385,7 +377,7 @@
       }
 
       if (ROLE === 'none') {
-        document.getElementById('loader').style.display = 'none';
+        hideLoader();
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('loginError').style.display = 'block';
         document.getElementById('loginKey').value = '';
@@ -408,6 +400,7 @@
         document.getElementById('roleLabel').textContent = 'Colaborador';
         document.getElementById('roleLabel').style.background = 'rgba(16,185,129,0.15)';
         document.getElementById('roleLabel').style.color = '#6ee7b7';
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
       }
 
       // Carregar dados
@@ -416,8 +409,7 @@
       // Mostrar interface
       document.getElementById('header').style.display = 'flex';
       document.getElementById('mainContainer').style.display = 'block';
-      document.getElementById('loader').classList.add('fade-out');
-      setTimeout(() => document.getElementById('loader').style.display = 'none', 400);
+      hideLoader();
     }
 
     function fazerLogin() {
@@ -427,11 +419,23 @@
       tentarLogin(input, true);
     }
 
+    function toggleSenha() {
+      const input = document.getElementById('loginKey');
+      const btn = document.getElementById('toggleSenhaBtn');
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = 'ocultar';
+      } else {
+        input.type = 'password';
+        btn.textContent = 'mostrar';
+      }
+    }
+
     // ============================================
     // CARREGAR DADOS
     // ============================================
     async function carregarDados() {
-      document.getElementById('tableBody').innerHTML = '<tr><td colspan="11" class="loading"><div class="spinner" style="margin:0 auto;"></div></td></tr>';
+      showLoader();
       try {
         const res = await fetch(`${API_URL}?action=listar&token=${encodeURIComponent(key)}`);
         clientes = await res.json();
@@ -439,16 +443,28 @@
       } catch (e) {
         document.getElementById('tableBody').innerHTML = '<tr><td colspan="11" class="loading">Erro ao carregar dados</td></tr>';
       }
+      hideLoader();
     }
 
     function renderTabela(data) {
       document.getElementById('countLabel').textContent = `${data.length} clientes`;
+
+      // Renderizar cabeçalho dinamicamente
+      const isAdmin = ROLE === 'admin';
+      document.getElementById('tableHead').innerHTML = `<tr>
+        <th>Nome Completo</th><th>Email</th><th>Grupo</th><th>Status</th>
+        <th>DS-160</th><th>Codigo</th><th>Confirmacao</th>
+        ${isAdmin ? '<th>Pagamento</th>' : ''}
+        <th>Data</th><th>Pasta</th>
+        ${isAdmin ? '<th>Acoes</th>' : ''}
+      </tr>`;
+
+      const cols = isAdmin ? 11 : 9;
       if (data.length === 0) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="11" class="loading">Nenhum cliente cadastrado</td></tr>';
+        document.getElementById('tableBody').innerHTML = `<tr><td colspan="${cols}" class="loading">Nenhum cliente cadastrado</td></tr>`;
         return;
       }
 
-      const showActions = ROLE === 'admin';
       document.getElementById('tableBody').innerHTML = data.map(c => `
         <tr>
           <td data-label="Nome"><strong>${c.nomeCompleto || ''}</strong></td>
@@ -458,10 +474,10 @@
           <td data-label="DS-160" class="link-cell">${linkCell(c.formularioDS160)}</td>
           <td data-label="Codigo">${c.codigo || ''}</td>
           <td data-label="Confirmacao" class="link-cell">${linkCell(c.confirmacao)}</td>
-          ${ROLE === 'admin' ? `<td data-label="Pagamento">${c.pagamento || ''}</td>` : ''}
+          ${isAdmin ? `<td data-label="Pagamento">${c.pagamento || ''}</td>` : ''}
           <td data-label="Data">${formatDate(c.dataEntrada)}</td>
           <td data-label="Pasta" class="link-cell">${c.pastaDrive ? '<a href="'+c.pastaDrive+'" target="_blank">Abrir</a>' : ''}</td>
-          ${showActions ? `<td data-label="Acoes" class="action-btns">
+          ${isAdmin ? `<td data-label="Acoes" class="action-btns">
             <button class="btn btn-primary btn-sm" onclick="editar('${c.id}')">Editar</button>
             <button class="btn btn-danger btn-sm" onclick="excluir('${c.id}')">X</button>
           </td>` : ''}
@@ -569,6 +585,8 @@
       if (id) payload.id = id;
       const action = id ? 'atualizar' : 'adicionar';
 
+      showLoader();
+      fecharModal();
       try {
         const res = await fetch(`${API_URL}?action=${action}&token=${encodeURIComponent(key)}`, {
           method: 'POST',
@@ -586,19 +604,21 @@
             }
           }
           toast('Salvo com sucesso!');
-          fecharModal();
-          carregarDados();
+          await carregarDados();
         } else {
           toast(result.error || 'Erro ao salvar', true);
+          hideLoader();
         }
       } catch (e) {
         toast('Erro de conexao', true);
+        hideLoader();
       }
     }
 
     async function excluir(id) {
       if (ROLE !== 'admin') return;
       if (!confirm('Excluir este cliente?')) return;
+      showLoader();
       try {
         const res = await fetch(`${API_URL}?action=excluir&token=${encodeURIComponent(key)}`, {
           method: 'POST',
@@ -607,10 +627,13 @@
         const result = await res.json();
         if (result.success) {
           toast('Excluido!');
-          carregarDados();
+          await carregarDados();
+        } else {
+          hideLoader();
         }
       } catch (e) {
         toast('Erro ao excluir', true);
+        hideLoader();
       }
     }
 
@@ -639,6 +662,7 @@
     }
 
     async function carregarRemetentes() {
+      showLoader();
       const res = await fetch(`${API_URL}?action=listarConfig`);
       const lista = await res.json();
       document.getElementById('remetentesList').innerHTML = lista.map(e => `
@@ -647,30 +671,44 @@
           <button class="btn btn-danger btn-sm" onclick="removeRemetente('${e}')">Remover</button>
         </div>
       `).join('') || '<p style="color:#718096;font-size:0.85rem;">Nenhum remetente cadastrado</p>';
+      hideLoader();
     }
 
     async function addRemetente() {
       const email = document.getElementById('novoRemetente').value.trim();
       if (!email) return;
+      showLoader();
       await fetch(`${API_URL}?action=adicionarRemetente&token=${encodeURIComponent(key)}`, {
         method: 'POST', body: JSON.stringify({ email })
       });
       document.getElementById('novoRemetente').value = '';
       toast('Remetente adicionado!');
-      carregarRemetentes();
+      await carregarRemetentes();
     }
 
     async function removeRemetente(email) {
+      showLoader();
       await fetch(`${API_URL}?action=excluirRemetente&token=${encodeURIComponent(key)}`, {
         method: 'POST', body: JSON.stringify({ email })
       });
       toast('Remetente removido!');
-      carregarRemetentes();
+      await carregarRemetentes();
     }
 
     // ============================================
     // UTILS
     // ============================================
+    function showLoader() {
+      const el = document.getElementById('loader');
+      el.classList.remove('fade-out');
+      el.style.display = 'flex';
+    }
+    function hideLoader() {
+      const el = document.getElementById('loader');
+      el.classList.add('fade-out');
+      setTimeout(() => el.style.display = 'none', 400);
+    }
+
     function toast(msg, isError) {
       const el = document.getElementById('toast');
       el.textContent = msg;
