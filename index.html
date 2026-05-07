@@ -663,8 +663,9 @@
 
     async function carregarRemetentes() {
       showLoader();
-      const res = await fetch(`${API_URL}?action=listarConfig`);
+      const res = await fetch(`${API_URL}?action=listarConfig&token=${encodeURIComponent(key)}`);
       const lista = await res.json();
+      if (!Array.isArray(lista)) { hideLoader(); return; }
       document.getElementById('remetentesList').innerHTML = lista.map(e => `
         <div class="remetente-item">
           <span>${e}</span>
