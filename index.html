@@ -1,880 +1,292 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Controle de Vistos</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #0f0f12;
-      --surface: #1a1a23;
-      --surface-hover: #22222e;
-      --border: #2a2a3a;
-      --text: #e4e4ed;
-      --text-muted: #8888a4;
-      --accent: #6366f1;
-      --accent-hover: #818cf8;
-      --danger: #ef4444;
-      --success: #10b981;
-      --warning: #f59e0b;
-      --radius: 12px;
-    }
-    [data-theme="light"] {
-      --bg: #f4f4f8;
-      --surface: #ffffff;
-      --surface-hover: #f0f0f5;
-      --border: #e2e2ea;
-      --text: #1a1a2e;
-      --text-muted: #6b6b80;
-      --accent: #4f46e5;
-      --accent-hover: #6366f1;
-      --danger: #dc2626;
-      --success: #059669;
-      --warning: #d97706;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+// ============================================
+// PROCESSADOR DE EMAILS
+// Configurar trigger: a cada 5 ou 10 minutos
+// ============================================
 
-    .header {
-      padding: 1.8rem 2.5rem;
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid var(--border);
-      backdrop-filter: blur(12px);
-      position: sticky; top: 0; z-index: 50;
-    }
-    .header h1 { font-size: 1.4rem; font-weight: 700; letter-spacing: -0.5px; }
-    .header-right { display: flex; align-items: center; gap: 1.2rem; }
+function processarEmails() {
+  const remetentesPermitidos = listarRemetentes();
+  if (remetentesPermitidos.length === 0) return;
 
-    .container { max-width: 1400px; margin: 0 auto; padding: 2rem 2.5rem; }
+  const threads = GmailApp.search('is:unread label:inbox', 0, 20);
 
-    .actions { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; align-items: center; }
+  threads.forEach(thread => {
+    const messages = thread.getMessages();
+    messages.forEach(msg => {
+      if (msg.isUnread()) {
+        const from = msg.getFrom().match(/<(.+?)>/)?.[1] || msg.getFrom();
+        const fromClean = from.toLowerCase().trim();
 
-    .btn {
-      padding: 0.65rem 1.4rem; border: none; border-radius: 8px; cursor: pointer;
-      font-size: 0.85rem; font-weight: 500; font-family: 'Inter', sans-serif;
-      transition: all 0.2s ease; letter-spacing: -0.2px;
-    }
-    .btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-    .btn:active { transform: translateY(0); }
-    .btn-primary { background: var(--accent); color: white; }
-    .btn-primary:hover { background: var(--accent-hover); }
-    .btn-danger { background: rgba(239,68,68,0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
-    .btn-danger:hover { background: rgba(239,68,68,0.25); }
-    .btn-secondary { background: var(--surface); color: var(--text-muted); border: 1px solid var(--border); }
-    .btn-secondary:hover { background: var(--surface-hover); color: var(--text); }
+        if (!remetentesPermitidos.some(r => r.toLowerCase().trim() === fromClean)) return;
 
-    .search {
-      padding: 0.65rem 1.2rem; border: 1px solid var(--border); border-radius: 8px;
-      font-size: 0.85rem; width: 280px; background: var(--surface); color: var(--text);
-      font-family: 'Inter', sans-serif; transition: border-color 0.2s;
-    }
-    .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-    .search::placeholder { color: var(--text-muted); }
+        const body = msg.getPlainBody();
+        const attachments = obterAnexos(msg);
+        const linksDrive = extrairLinksDrive(body);
 
-    .table-wrapper {
-      background: var(--surface); border-radius: var(--radius);
-      border: 1px solid var(--border); overflow-x: auto;
-    }
-    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-    th {
-      padding: 0.9rem 1rem; text-align: left; font-weight: 600;
-      color: var(--text-muted); text-transform: uppercase; font-size: 0.7rem;
-      letter-spacing: 0.5px; background: rgba(255,255,255,0.02);
-    }
-    td { padding: 0.85rem 1rem; border-top: 1px solid var(--border); }
-    tr { transition: background 0.15s; }
-    tr:hover { background: var(--surface-hover); }
+        if (attachments.length === 0 && linksDrive.length === 0) return;
 
-    .status-badge {
-      padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.7rem;
-      font-weight: 600; letter-spacing: -0.2px; white-space: nowrap;
-    }
-    .status-em-andamento { background: rgba(99,102,241,0.15); color: var(--accent); }
-    .status-restam-documentos { background: rgba(245,158,11,0.15); color: var(--warning); }
-    .status-cadastrar-no-casv { background: rgba(239,68,68,0.15); color: var(--danger); }
-    .status-finalizado { background: rgba(16,185,129,0.15); color: var(--success); }
+        // Extrair nomes do corpo do email (separados por ; ou quebra de linha)
+        const nomes = extrairNomes(body);
+        if (nomes.length === 0) return;
 
-    .modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
-      z-index: 100; justify-content: center; align-items: center;
-    }
-    .modal-overlay.active { display: flex; }
-    .modal {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 2.5rem; width: 90%; max-width: 520px;
-      max-height: 85vh; overflow-y: auto;
-    }
-    .modal h2 { margin-bottom: 1.8rem; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.5px; }
+        // Se múltiplos nomes, compartilham a mesma pasta
+        const grupo = nomes.length > 1 ? Utilities.getUuid().split('-')[0] : null;
+        let pastaGrupo = null;
 
-    .form-group { margin-bottom: 1.2rem; }
-    .form-group label { display: block; margin-bottom: 0.4rem; font-weight: 500; font-size: 0.8rem; color: var(--text-muted); }
-    .form-group input, .form-group select, .form-group textarea {
-      width: 100%; padding: 0.7rem 1rem; border: 1px solid var(--border);
-      border-radius: 8px; font-size: 0.85rem; background: var(--bg);
-      color: var(--text); font-family: 'Inter', sans-serif; transition: border-color 0.2s;
-    }
-    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
-      outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
-    }
-    .form-group textarea { resize: vertical; min-height: 70px; }
-    .form-group select { cursor: pointer; }
-    .form-actions { display: flex; gap: 0.8rem; margin-top: 2rem; }
-
-    .link-cell a { color: var(--accent-hover); text-decoration: none; font-weight: 500; }
-    .link-cell a:hover { text-decoration: underline; }
-
-    .toast {
-      position: fixed; bottom: 2rem; right: 2rem;
-      padding: 1rem 1.8rem; border-radius: 10px;
-      font-size: 0.85rem; font-weight: 500; display: none; z-index: 200;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-    }
-
-    .config-section {
-      margin-top: 2.5rem; background: var(--surface);
-      border: 1px solid var(--border); border-radius: var(--radius); padding: 2rem;
-    }
-    .config-section h3 { margin-bottom: 1.2rem; font-weight: 600; font-size: 1rem; }
-    .remetente-item {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 0.7rem 0; border-bottom: 1px solid var(--border);
-      font-size: 0.85rem;
-    }
-
-    .loading { text-align: center; padding: 3rem; color: var(--text-muted); }
-    .action-btns { position: relative; }
-    .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.72rem; border-radius: 6px; }
-    .dots-btn {
-      background: none; border: 1px solid var(--border); border-radius: 6px;
-      color: var(--text); cursor: pointer; padding: 0.3rem 0.6rem; font-size: 1.1rem;
-      line-height: 1; transition: background 0.2s;
-    }
-    .dots-btn:hover { background: var(--surface-hover); }
-    .action-menu {
-      display: none; position: fixed;
-      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-      padding: 0.4rem 0; min-width: 150px; z-index: 60;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    }
-    .action-menu.open { display: block; }
-    .action-menu button {
-      display: block; width: 100%; text-align: left; padding: 0.5rem 1rem;
-      background: none; border: none; color: var(--text); font-size: 0.8rem;
-      cursor: pointer; font-family: 'Inter', sans-serif;
-    }
-    .action-menu button:hover { background: var(--surface-hover); }
-    .action-menu button.danger { color: var(--danger); }
-
-    .badge-role {
-      padding: 0.35rem 1rem; border-radius: 20px; font-size: 0.72rem;
-      font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase;
-      background: rgba(99,102,241,0.15); color: var(--accent);
-    }
-
-    .theme-toggle {
-      width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--border);
-      background: var(--surface); color: var(--text-muted); cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.1rem; transition: all 0.2s;
-    }
-    .theme-toggle:hover { background: var(--surface-hover); color: var(--text); }
-
-    .hidden { display: none !important; }
-
-    .loader-overlay {
-      position: fixed; inset: 0; background: var(--bg);
-      display: flex; flex-direction: column; justify-content: center; align-items: center;
-      z-index: 300; gap: 1.2rem;
-    }
-    .loader-overlay.fade-out { opacity: 0; transition: opacity 0.4s; pointer-events: none; }
-    .spinner {
-      width: 36px; height: 36px; border: 3px solid var(--border);
-      border-top-color: var(--accent); border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-text { color: var(--text-muted); font-size: 0.85rem; }
-
-    .login-overlay {
-      position: fixed; inset: 0; background: var(--bg);
-      display: flex; justify-content: center; align-items: center; z-index: 250;
-    }
-    .login-box {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 16px; padding: 2.5rem; width: 90%; max-width: 380px; text-align: center;
-    }
-    .login-box h2 { margin-bottom: 0.5rem; font-size: 1.3rem; font-weight: 700; }
-    .login-box p { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.8rem; }
-    .login-box input {
-      width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--border);
-      border-radius: 8px; background: var(--bg); color: var(--text);
-      font-family: 'Inter', sans-serif; font-size: 0.9rem; margin-bottom: 1rem;
-      text-align: center; letter-spacing: 1px;
-    }
-    .login-box input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-    .login-error { color: var(--danger); font-size: 0.8rem; margin-bottom: 1rem; display: none; }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-    /* Mobile */
-    @media (max-width: 768px) {
-      .header { padding: 1.2rem 1rem; }
-      .header h1 { font-size: 1.1rem; }
-      .container { padding: 1rem; }
-      .actions { gap: 0.6rem; }
-      .search { width: 100%; order: -1; }
-      .table-wrapper { border-radius: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
-      table { font-size: 0.7rem; min-width: 700px; }
-      th, td { padding: 0.5rem 0.4rem; white-space: nowrap; }
-      .modal { padding: 1.5rem; width: 95%; border-radius: 12px; }
-      .modal h2 { font-size: 1.1rem; margin-bottom: 1.2rem; }
-      .btn { padding: 0.55rem 1rem; font-size: 0.8rem; }
-      .config-section { padding: 1.2rem; }
-    }
-  </style>
-</head>
-<body>
-  <!-- Loader -->
-  <div class="loader-overlay" id="loader">
-    <div class="spinner"></div>
-    <span class="loader-text">Carregando...</span>
-  </div>
-
-  <!-- Login -->
-  <div class="login-overlay" id="loginOverlay" style="display:none;">
-    <div class="login-box">
-      <h2>Controle de Vistos</h2>
-      <p>Insira sua chave de acesso para continuar</p>
-      <span class="login-error" id="loginError">Chave invalida. Tente novamente.</span>
-      <div style="position:relative;">
-        <input type="password" id="loginKey" placeholder="Chave de acesso" onkeydown="if(event.key==='Enter')fazerLogin()" style="padding-right:2.5rem; align-items:center; display: flex;">
-        <span onclick="toggleSenha()" style="position:absolute;right:0.8rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:flex;" id="toggleSenhaBtn">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        </span>
-      </div>
-      <button class="btn btn-primary" style="width:100%;padding:0.75rem;" onclick="fazerLogin()">Entrar</button>
-    </div>
-  </div>
-
-  <div class="header" id="header" style="display:none;">
-    <h1>Controle de Vistos</h1>
-    <div style="display:flex;align-items:center;gap:1rem;">
-      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Alternar tema">&#9790;</button>
-      <span class="badge-role" id="roleLabel" onclick="trocarAcesso()" style="cursor:pointer;" title="Trocar acesso"></span>
-      <span id="countLabel" style="color:var(--text-muted);font-size:0.85rem;">0 clientes</span>
-    </div>
-  </div>
-
-  <div class="container" id="mainContainer" style="display:none;">
-    <div class="actions">
-      <button class="btn btn-primary" onclick="abrirModalNovo()">+ Novo Cliente</button>
-      <button class="btn btn-secondary admin-only hidden" onclick="toggleConfig()">Remetentes</button>
-      <input type="text" class="search" placeholder="Buscar por nome, grupo..." oninput="filtrar(this.value)">
-    </div>
-
-    <div class="table-wrapper">
-      <table>
-        <thead id="tableHead">
-        </thead>
-        <tbody id="tableBody">
-          <tr><td colspan="11" class="loading">Carregando...</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="config-section admin-only hidden" id="configSection" style="display:none;">
-      <h3>Remetentes Permitidos (Email)</h3>
-      <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-        <input type="email" id="novoRemetente" placeholder="email@exemplo.com" style="flex:1;padding:0.7rem 1rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;font-size:0.85rem;">
-        <button class="btn btn-primary btn-sm" onclick="addRemetente()">Adicionar</button>
-      </div>
-      <div id="remetentesList"></div>
-    </div>
-  </div>
-
-  <!-- Modal Novo/Editar -->
-  <div class="modal-overlay" id="modalOverlay">
-    <div class="modal">
-      <h2 id="modalTitle">Novo Cliente</h2>
-      <input type="hidden" id="editId">
-      <div class="form-group"><label>Nome Completo</label><input type="text" id="fNome"></div>
-      <div class="form-group"><label>Email</label><input type="email" id="fEmail"></div>
-      <div class="form-group"><label>Grupo (ID)</label><input type="text" id="fGrupo" placeholder="Deixe vazio para gerar automaticamente"></div>
-      <div class="form-group">
-        <label>Status</label>
-        <select id="fStatus">
-          <option>Início</option>
-          <option>Em andamento</option>
-          <option>Restam Documentos</option>
-          <option>Cadastrar no Casv</option>
-          <option>Finalizado</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Formulario DS-160 (link)</label><input type="text" id="fFormulario"></div>
-      <div class="form-group"><label>Codigo</label><input type="text" id="fCodigo"></div>
-      <div class="form-group"><label>Confirmacao (link)</label><input type="text" id="fConfirmacao"></div>
-      <div class="form-group">
-        <label>Pagamento</label>
-        <select id="fPagamento">
-          <option>Pendente</option>
-          <option>Pago</option>
-          <option>Parcial</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Link da Pasta no Drive (opcional)</label><input type="text" id="fPastaDrive" placeholder="https://drive.google.com/drive/folders/..."></div>
-      <div class="form-group"><label>Observacoes</label><textarea id="fObs"></textarea></div>
-      <div class="form-group admin-only hidden">
-        <label>Upload de Arquivo (opcional)</label>
-        <input type="file" id="fArquivo" multiple>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" onclick="salvar()">Salvar</button>
-        <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Arquivar DS-160 -->
-  <div class="modal-overlay" id="modalArquivar">
-    <div class="modal">
-      <h2>Arquivar DS-160</h2>
-      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1.2rem;">O formulário, código e confirmação atuais serão salvos no histórico e limpos do cliente.</p>
-      <input type="hidden" id="arquivarClienteId">
-      <div class="form-group"><label>Justificativa</label><textarea id="fJustificativa" placeholder="Motivo da descontinuação..."></textarea></div>
-      <div class="form-actions">
-        <button class="btn btn-danger" onclick="confirmarArquivar()">Arquivar</button>
-        <button class="btn btn-secondary" onclick="document.getElementById('modalArquivar').classList.remove('active')">Cancelar</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Histórico -->
-  <div class="modal-overlay" id="modalHistorico">
-    <div class="modal" style="max-width:650px;">
-      <h2 id="historicoTitle">Histórico DS-160</h2>
-      <div id="historicoContent" style="margin-top:1rem;"></div>
-      <div class="form-actions" style="margin-top:1.5rem;">
-        <button class="btn btn-secondary" onclick="document.getElementById('modalHistorico').classList.remove('active')">Fechar</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <script>
-    // ============================================
-    // CONFIGURAÇÃO - ALTERE AQUI
-    // ============================================
-    const API_URL = 'https://script.google.com/macros/s/AKfycbyVrsvdhZIdsfjKmqfIGcu1aVzXCalEB-OH-d1UwCtGQFZvUIrZx0G2GmjtFpvLLL3SOg/exec';
-
-    const params = new URLSearchParams(window.location.search);
-    let key = params.get('key') || '';
-
-    let ROLE = 'none';
-    let clientes = [];
-
-    // ============================================
-    // AUTENTICAÇÃO
-    // ============================================
-    (async function init() {
-      if (key) {
-        await tentarLogin(key, false);
-      } else {
-        // Sem key na URL: mostra modal de login
-        document.getElementById('loader').style.display = 'none';
-        document.getElementById('loginOverlay').style.display = 'flex';
-      }
-    })();
-
-    async function tentarLogin(token, fromModal) {
-      showLoader();
-      document.getElementById('loginOverlay').style.display = 'none';
-
-      try {
-        const res = await fetch(`${API_URL}?action=auth&token=${encodeURIComponent(token)}`);
-        const auth = await res.json();
-        ROLE = auth.role || 'none';
-      } catch (e) {
-        ROLE = 'none';
-      }
-
-      if (ROLE === 'none') {
-        hideLoader();
-        document.getElementById('loginOverlay').style.display = 'flex';
-        document.getElementById('loginError').style.display = 'block';
-        document.getElementById('loginKey').value = '';
-        document.getElementById('loginKey').focus();
-        return;
-      }
-
-      key = token;
-
-      // Salvar key na URL sem recarregar
-      const url = new URL(window.location);
-      url.searchParams.set('key', key);
-      history.replaceState(null, '', url);
-
-      // Aplicar permissões
-      if (ROLE === 'admin') {
-        document.getElementById('roleLabel').textContent = 'Admin';
-        document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-      } else {
-        document.getElementById('roleLabel').textContent = 'Colaborador';
-        document.getElementById('roleLabel').style.background = 'rgba(16,185,129,0.15)';
-        document.getElementById('roleLabel').style.color = '#6ee7b7';
-        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-      }
-
-      // Carregar dados
-      await carregarDados();
-
-      // Mostrar interface
-      document.getElementById('header').style.display = 'flex';
-      document.getElementById('mainContainer').style.display = 'block';
-      hideLoader();
-    }
-
-    function fazerLogin() {
-      const input = document.getElementById('loginKey').value.trim();
-      if (!input) return;
-      document.getElementById('loginError').style.display = 'none';
-      tentarLogin(input, true);
-    }
-
-    function toggleSenha() {
-      const input = document.getElementById('loginKey');
-      const btn = document.getElementById('toggleSenhaBtn');
-      if (input.type === 'password') {
-        input.type = 'text';
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-      } else {
-        input.type = 'password';
-        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-      }
-    }
-
-    // ============================================
-    // CARREGAR DADOS
-    // ============================================
-    async function carregarDados() {
-      showLoader();
-      try {
-        const res = await fetch(`${API_URL}?action=listar&token=${encodeURIComponent(key)}`);
-        clientes = await res.json();
-        renderTabela(clientes);
-      } catch (e) {
-        document.getElementById('tableBody').innerHTML = '<tr><td colspan="11" class="loading">Erro ao carregar dados</td></tr>';
-      }
-      hideLoader();
-    }
-
-    function renderTabela(data) {
-      document.getElementById('countLabel').textContent = `${data.length} clientes`;
-
-      // Renderizar cabeçalho dinamicamente
-      const isAdmin = ROLE === 'admin';
-      document.getElementById('tableHead').innerHTML = `<tr>
-        <th>Nome Completo</th><th>Email</th><th>Grupo</th><th>Status</th>
-        <th>DS-160</th><th>Codigo</th><th>Confirmacao</th>
-        ${isAdmin ? '<th>Pagamento</th>' : ''}
-        <th>Data</th><th>Pasta</th>
-        ${isAdmin ? '<th>Acoes</th>' : ''}
-      </tr>`;
-
-      const cols = isAdmin ? 11 : 9;
-      if (data.length === 0) {
-        document.getElementById('tableBody').innerHTML = `<tr><td colspan="${cols}" class="loading">Nenhum cliente cadastrado</td></tr>`;
-        return;
-      }
-
-      document.getElementById('tableBody').innerHTML = data.map(c => `
-        <tr>
-          <td data-label="Nome"><strong>${c.nomeCompleto || ''}</strong></td>
-          <td data-label="Email">${c.email || ''}</td>
-          <td data-label="Grupo">${c.grupo || ''}</td>
-          <td data-label="Status"><span class="status-badge status-${statusClass(c.status)}">${c.status || ''}</span></td>
-          <td data-label="DS-160" class="link-cell">${linkCell(c.formularioDS160)}</td>
-          <td data-label="Codigo">${c.codigo || ''}</td>
-          <td data-label="Confirmacao" class="link-cell">${linkCell(c.confirmacao)}</td>
-          ${isAdmin ? `<td data-label="Pagamento">${c.pagamento || ''}</td>` : ''}
-          <td data-label="Data">${formatDate(c.dataEntrada)}</td>
-          <td data-label="Pasta" class="link-cell">${c.pastaDrive ? '<a href="'+c.pastaDrive+'" target="_blank">Abrir</a>' : ''}</td>
-          ${isAdmin ? `<td data-label="Acoes" class="action-btns">
-            <button class="dots-btn" onclick="toggleMenu(event, '${c.id}')">&#8942;</button>
-            <div class="action-menu" id="menu-${c.id}">
-              <button onclick="editar('${c.id}')">Editar</button>
-              <button onclick="verHistorico('${c.id}','${(c.nomeCompleto||'').replace(/'/g,"\\'")}')">Histórico</button>
-              <button onclick="abrirArquivar('${c.id}')">Arquivar DS-160</button>
-              <button class="danger" onclick="excluir('${c.id}')">Excluir</button>
-            </div>
-          </td>` : ''}
-        </tr>
-      `).join('');
-    }
-
-    function statusClass(s) {
-      if (!s) return '';
-      return s.toLowerCase().replace(/\s+/g, '-').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    }
-
-    function linkCell(val) {
-      if (!val) return '';
-      if (val.startsWith('http')) return `<a href="${val}" target="_blank">Ver</a>`;
-      return val;
-    }
-
-    function formatDate(d) {
-      if (!d) return '';
-      if (typeof d === 'string' && d.includes('T')) return d.split('T')[0];
-      return d;
-    }
-
-    function filtrar(termo) {
-      const t = termo.toLowerCase();
-      const filtered = clientes.filter(c =>
-        (c.nomeCompleto || '').toLowerCase().includes(t) ||
-        (c.grupo || '').toLowerCase().includes(t) ||
-        (c.email || '').toLowerCase().includes(t) ||
-        (c.status || '').toLowerCase().includes(t)
-      );
-      renderTabela(filtered);
-    }
-
-    // ============================================
-    // MODAL
-    // ============================================
-    function abrirModalNovo() {
-      document.getElementById('modalTitle').textContent = 'Novo Cliente';
-      document.getElementById('editId').value = '';
-      document.getElementById('fNome').value = '';
-      document.getElementById('fEmail').value = '';
-      document.getElementById('fGrupo').value = '';
-      document.getElementById('fStatus').value = 'Em andamento';
-      document.getElementById('fFormulario').value = '';
-      document.getElementById('fCodigo').value = '';
-      document.getElementById('fConfirmacao').value = '';
-      document.getElementById('fPagamento').value = 'Pendente';
-      document.getElementById('fPastaDrive').value = '';
-      document.getElementById('fObs').value = '';
-      if (document.getElementById('fArquivo')) document.getElementById('fArquivo').value = '';
-      document.getElementById('modalOverlay').classList.add('active');
-    }
-
-    function editar(id) {
-      if (ROLE !== 'admin') return;
-      const c = clientes.find(x => x.id === id);
-      if (!c) return;
-      document.getElementById('modalTitle').textContent = 'Editar Cliente';
-      document.getElementById('editId').value = c.id;
-      document.getElementById('fNome').value = c.nomeCompleto || '';
-      document.getElementById('fEmail').value = c.email || '';
-      document.getElementById('fGrupo').value = c.grupo || '';
-      document.getElementById('fStatus').value = c.status || 'Em andamento';
-      document.getElementById('fFormulario').value = c.formularioDS160 || '';
-      document.getElementById('fCodigo').value = c.codigo || '';
-      document.getElementById('fConfirmacao').value = c.confirmacao || '';
-      document.getElementById('fPagamento').value = c.pagamento || 'Pendente';
-      document.getElementById('fPastaDrive').value = c.pastaDrive || '';
-      document.getElementById('fObs').value = c.observacoes || '';
-      if (document.getElementById('fArquivo')) document.getElementById('fArquivo').value = '';
-      document.getElementById('modalOverlay').classList.add('active');
-    }
-
-    function fecharModal() {
-      document.getElementById('modalOverlay').classList.remove('active');
-    }
-
-    // ============================================
-    // SALVAR / EXCLUIR
-    // ============================================
-    async function salvar() {
-      const id = document.getElementById('editId').value;
-
-      // Colab não pode editar, só adicionar
-      if (id && ROLE !== 'admin') {
-        toast('Sem permissao para editar', true);
-        return;
-      }
-
-      const payload = {
-        nomeCompleto: document.getElementById('fNome').value,
-        email: document.getElementById('fEmail').value,
-        grupo: document.getElementById('fGrupo').value,
-        status: document.getElementById('fStatus').value,
-        formularioDS160: document.getElementById('fFormulario').value,
-        codigo: document.getElementById('fCodigo').value,
-        confirmacao: document.getElementById('fConfirmacao').value,
-        pagamento: document.getElementById('fPagamento').value,
-        pastaDrive: document.getElementById('fPastaDrive').value,
-        observacoes: document.getElementById('fObs').value,
-      };
-
-      if (id) payload.id = id;
-      const action = id ? 'atualizar' : 'adicionar';
-
-      showLoader();
-      fecharModal();
-      try {
-        const res = await fetch(`${API_URL}?action=${action}&token=${encodeURIComponent(key)}`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
-        const result = await res.json();
-
-        if (result.success) {
-          // Upload de arquivos (admin only)
-          const fileInput = document.getElementById('fArquivo');
-          if (fileInput && fileInput.files.length > 0) {
-            const clienteId = id || result.id;
-            for (const file of fileInput.files) {
-              await uploadFile(file, clienteId);
+        // Verificar se algum dos nomes já existe (usa a pasta dele)
+        if (nomes.length > 1) {
+          for (const nome of nomes) {
+            const existente = buscarClientePorNome(nome);
+            if (existente && existente.pastaDrive) {
+              pastaGrupo = existente.pastaDrive;
+              break;
             }
           }
-          toast('Salvo com sucesso!');
-          await carregarDados();
-        } else {
-          toast(result.error || 'Erro ao salvar', true);
-          hideLoader();
+          // Se nenhum existe, busca pasta existente ou cria nova
+          if (!pastaGrupo) {
+            const primeirosNomes = nomes.map(n => n.split(' ')[0]).join(' e ');
+            const parentFolder = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
+            const existing = parentFolder.getFoldersByName(primeirosNomes);
+            const folder = existing.hasNext() ? existing.next() : parentFolder.createFolder(primeirosNomes);
+            pastaGrupo = folder.getUrl();
+          }
         }
-      } catch (e) {
-        toast('Erro de conexao', true);
-        hideLoader();
-      }
-    }
 
-    async function excluir(id) {
-      if (ROLE !== 'admin') return;
-      if (!confirm('Excluir este cliente?')) return;
-      showLoader();
-      try {
-        const res = await fetch(`${API_URL}?action=excluir&token=${encodeURIComponent(key)}`, {
-          method: 'POST',
-          body: JSON.stringify({ id }),
+        nomes.forEach(nome => {
+          const clienteExistente = buscarClientePorNome(nome);
+
+          if (clienteExistente) {
+            // Já existe: usa pasta do grupo ou a dele
+            if (!pastaGrupo) pastaGrupo = clienteExistente.pastaDrive;
+          } else {
+            // Novo cliente
+            const result = adicionarCliente({
+              nomeCompleto: nome,
+              grupo: grupo || '',
+              status: 'Em andamento',
+              pastaDrive: pastaGrupo || ''
+            });
+
+            if (result.success && !pastaGrupo) {
+              pastaGrupo = result.pastaUrl;
+            }
+          }
         });
-        const result = await res.json();
-        if (result.success) {
-          toast('Excluido!');
-          await carregarDados();
-        } else {
-          hideLoader();
+
+        // Salvar arquivos UMA vez na pasta do grupo/cliente
+        if (pastaGrupo) {
+          if (attachments.length > 0) salvarAnexosNaPasta(pastaGrupo, attachments);
+          if (linksDrive.length > 0) salvarLinksDrivePasta(pastaGrupo, linksDrive);
         }
-      } catch (e) {
-        toast('Erro ao excluir', true);
-        hideLoader();
+
+        msg.markRead();
       }
-    }
-
-    async function uploadFile(file, clienteId) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const base64 = reader.result.split(',')[1];
-          await fetch(`${API_URL}?action=upload&token=${encodeURIComponent(key)}`, {
-            method: 'POST',
-            body: JSON.stringify({ fileData: base64, fileName: file.name, clienteId }),
-          });
-          resolve();
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-
-    // ============================================
-    // ARQUIVAMENTO DS-160
-    // ============================================
-    function abrirArquivar(clienteId) {
-      document.getElementById('arquivarClienteId').value = clienteId;
-      document.getElementById('fJustificativa').value = '';
-      document.getElementById('modalArquivar').classList.add('active');
-    }
-
-    async function confirmarArquivar() {
-      const clienteId = document.getElementById('arquivarClienteId').value;
-      const justificativa = document.getElementById('fJustificativa').value;
-      document.getElementById('modalArquivar').classList.remove('active');
-      showLoader();
-      try {
-        const res = await fetch(`${API_URL}?action=arquivarDS160&token=${encodeURIComponent(key)}`, {
-          method: 'POST',
-          body: JSON.stringify({ clienteId, justificativa }),
-        });
-        const result = await res.json();
-        if (result.success) {
-          toast('Formulário arquivado!');
-          await carregarDados();
-        } else {
-          toast(result.error || 'Erro ao arquivar', true);
-          hideLoader();
-        }
-      } catch (e) {
-        toast('Erro de conexão', true);
-        hideLoader();
-      }
-    }
-
-    async function verHistorico(clienteId, nome) {
-      document.getElementById('historicoTitle').textContent = `Histórico - ${nome}`;
-      document.getElementById('historicoContent').innerHTML = '<div class="spinner" style="margin:1rem auto;"></div>';
-      document.getElementById('modalHistorico').classList.add('active');
-
-      try {
-        const res = await fetch(`${API_URL}?action=listarHistorico&token=${encodeURIComponent(key)}&clienteId=${clienteId}`);
-        const lista = await res.json();
-        if (!Array.isArray(lista) || lista.length === 0) {
-          document.getElementById('historicoContent').innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nenhum formulário arquivado.</p>';
-          return;
-        }
-        document.getElementById('historicoContent').innerHTML = lista.map(h => `
-          <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:0.8rem;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
-              <strong style="font-size:0.8rem;">Código: ${h.codigo || '—'}</strong>
-              <span style="color:var(--text-muted);font-size:0.75rem;">${h.dataArquivamento || ''}</span>
-            </div>
-            <div style="font-size:0.8rem;margin-bottom:0.3rem;">DS-160: ${h.formularioDS160 ? '<a href="'+h.formularioDS160+'" target="_blank" style="color:var(--accent-hover);">Ver</a>' : '—'}</div>
-            <div style="font-size:0.8rem;margin-bottom:0.3rem;">Confirmação: ${h.confirmacao ? '<a href="'+h.confirmacao+'" target="_blank" style="color:var(--accent-hover);">Ver</a>' : '—'}</div>
-            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic;">${h.justificativa || 'Sem justificativa'}</div>
-          </div>
-        `).join('');
-      } catch (e) {
-        document.getElementById('historicoContent').innerHTML = '<p style="color:var(--danger);">Erro ao carregar histórico.</p>';
-      }
-    }
-
-    // ============================================
-    // REMETENTES (admin only)
-    // ============================================
-    function toggleConfig() {
-      const el = document.getElementById('configSection');
-      el.style.display = el.style.display === 'none' ? 'block' : 'none';
-      if (el.style.display === 'block') carregarRemetentes();
-    }
-
-    async function carregarRemetentes() {
-      showLoader();
-      const res = await fetch(`${API_URL}?action=listarConfig&token=${encodeURIComponent(key)}`);
-      const lista = await res.json();
-      if (!Array.isArray(lista)) { hideLoader(); return; }
-      document.getElementById('remetentesList').innerHTML = lista.map(e => `
-        <div class="remetente-item">
-          <span>${e}</span>
-          <button class="btn btn-danger btn-sm" onclick="removeRemetente('${e}')">Remover</button>
-        </div>
-      `).join('') || '<p style="color:#718096;font-size:0.85rem;">Nenhum remetente cadastrado</p>';
-      hideLoader();
-    }
-
-    async function addRemetente() {
-      const email = document.getElementById('novoRemetente').value.trim();
-      if (!email) return;
-      showLoader();
-      await fetch(`${API_URL}?action=adicionarRemetente&token=${encodeURIComponent(key)}`, {
-        method: 'POST', body: JSON.stringify({ email })
-      });
-      document.getElementById('novoRemetente').value = '';
-      toast('Remetente adicionado!');
-      await carregarRemetentes();
-    }
-
-    async function removeRemetente(email) {
-      showLoader();
-      await fetch(`${API_URL}?action=excluirRemetente&token=${encodeURIComponent(key)}`, {
-        method: 'POST', body: JSON.stringify({ email })
-      });
-      toast('Remetente removido!');
-      await carregarRemetentes();
-    }
-
-    // ============================================
-    // MENU DE AÇÕES
-    // ============================================
-    function toggleMenu(e, id) {
-      e.stopPropagation();
-      const menu = document.getElementById('menu-' + id);
-      const wasOpen = menu.classList.contains('open');
-
-      // Fechar todos
-      document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
-
-      if (!wasOpen) {
-        const rect = e.currentTarget.getBoundingClientRect();
-        menu.style.top = (rect.bottom + 4) + 'px';
-        menu.style.left = (rect.right - 150) + 'px';
-
-        // Se não cabe embaixo, abre pra cima
-        menu.classList.add('open');
-        const menuRect = menu.getBoundingClientRect();
-        if (menuRect.bottom > window.innerHeight) {
-          menu.style.top = (rect.top - menuRect.height - 4) + 'px';
-        }
-      }
-    }
-
-    document.addEventListener('click', () => {
-      document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
     });
+  });
+}
 
-    // ============================================
-    // UTILS
-    // ============================================
-    function showLoader() {
-      const el = document.getElementById('loader');
-      el.classList.remove('fade-out');
-      el.style.display = 'flex';
+function extrairNomes(body) {
+  if (!body || !body.trim()) return [];
+
+  const match = body.match(/###\s*([\s\S]*?)\s*###/);
+  if (!match) return [];
+
+  const bloco = match[1];
+  let nomes = bloco.includes(';') ? bloco.split(';') : bloco.split('\n');
+
+  return nomes.map(n => n.trim()).filter(n => n.length > 2 && n.length < 100);
+}
+
+function buscarClientePorNome(nome) {
+  const sheet = SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getSheetByName(CONFIG.SHEET_CLIENTES);
+  const data = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1].toLowerCase().trim() === nome.toLowerCase().trim()) {
+      return {
+        id: data[i][0],
+        nomeCompleto: data[i][1],
+        pastaDrive: data[i][10]
+      };
     }
-    function hideLoader() {
-      const el = document.getElementById('loader');
-      el.classList.add('fade-out');
-      setTimeout(() => el.style.display = 'none', 400);
+  }
+  return null;
+}
+
+function salvarAnexosNaPasta(pastaUrl, attachments) {
+  const folderId = pastaUrl.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1];
+  if (!folderId) return;
+
+  const folder = DriveApp.getFolderById(folderId);
+  attachments.forEach(att => {
+    const nome = att.getName();
+    const existentes = folder.getFilesByName(nome);
+    if (!existentes.hasNext()) {
+      folder.createFile(att);
     }
+  });
+}
 
-    function toast(msg, isError) {
-      const el = document.getElementById('toast');
-      el.textContent = msg;
-      el.style.background = isError ? '#7f1d1d' : '#064e3b';
-      el.style.color = isError ? '#fca5a5' : '#6ee7b7';
-      el.style.display = 'block';
-      setTimeout(() => el.style.display = 'none', 3000);
+// Extrai todos os anexos de uma mensagem, incluindo inline e encaminhados
+function obterAnexos(msg) {
+  const todos = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+  return todos.filter(att => {
+    const name = att.getName().toLowerCase();
+    if (name.endsWith('.eml')) return false;
+    return att.getSize() > 500;
+  });
+}
+
+// Extrai links do Google Drive do corpo do email
+function extrairLinksDrive(body) {
+  if (!body) return [];
+  const regex = /https:\/\/drive\.google\.com\/file\/d\/[a-zA-Z0-9_-]+/g;
+  const matches = body.match(regex) || [];
+  return [...new Set(matches)]; // remove duplicados
+}
+
+// Salva links do Drive como atalhos na pasta do cliente
+function salvarLinksDrivePasta(pastaUrl, links) {
+  const folderId = pastaUrl.match(/folders\/([a-zA-Z0-9_-]+)/)?.[1];
+  if (!folderId || links.length === 0) return;
+
+  const folder = DriveApp.getFolderById(folderId);
+  links.forEach(link => {
+    const fileId = link.match(/\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+    if (!fileId) return;
+    try {
+      const file = DriveApp.getFileById(fileId);
+      // Cria uma cópia na pasta do cliente
+      file.makeCopy(file.getName(), folder);
+    } catch (e) {
+      // Se não tiver permissão para copiar, salva o link como arquivo de texto
+      folder.createFile(fileId + '.txt', 'Link: ' + link);
     }
+  });
+}
 
-    // ============================================
-    // TROCAR ACESSO
-    // ============================================
-    function trocarAcesso() {
-      document.getElementById('loginError').style.display = 'none';
-      document.getElementById('loginKey').value = '';
-      document.getElementById('loginOverlay').style.display = 'flex';
-      document.getElementById('loginKey').focus();
-    }
+// ============================================
+// CONFIGURAR TRIGGER (rodar manualmente uma vez)
+// ============================================
+function criarTriggerEmail() {
+  ScriptApp.newTrigger('processarEmails')
+    .timeBased()
+    .everyMinutes(5)
+    .create();
+}
 
+// ============================================
+// VARRER EMAILS RECENTES (rodar manualmente para testar)
+// Busca os últimos 30 emails (lidos ou não) e processa
+// os que forem de remetentes cadastrados
+// ============================================
+function varrerEmailsRecentes() {
+  const remetentesPermitidos = listarRemetentes();
+  if (remetentesPermitidos.length === 0) {
+    Logger.log('Nenhum remetente cadastrado.');
+    return;
+  }
 
+  Logger.log('Remetentes permitidos: ' + remetentesPermitidos.join(', '));
 
-    // ============================================
-    // TEMA
-    // ============================================
-    function toggleTheme() {
-      const html = document.documentElement;
-      const current = html.getAttribute('data-theme');
-      const next = current === 'light' ? 'dark' : 'light';
-      html.setAttribute('data-theme', next === 'dark' ? '' : 'light');
-      if (next === 'dark') html.removeAttribute('data-theme');
-      localStorage.setItem('theme', next);
-      document.getElementById('themeToggle').innerHTML = next === 'light' ? '&#9728;' : '&#9790;';
-    }
+  const threads = GmailApp.search('in:inbox newer_than:3d', 0, 30);
+  let processados = 0;
 
-    // Carregar tema salvo
-    (function() {
-      const saved = localStorage.getItem('theme') || 'dark';
-      if (saved === 'light') {
-        document.documentElement.setAttribute('data-theme', 'light');
-        document.getElementById('themeToggle').innerHTML = '&#9728;';
+  threads.forEach(thread => {
+    const messages = thread.getMessages();
+    messages.forEach(msg => {
+      const from = msg.getFrom().match(/<(.+?)>/)?.[1] || msg.getFrom();
+      const fromClean = from.toLowerCase().trim();
+
+      if (!remetentesPermitidos.some(r => r.toLowerCase().trim() === fromClean)) return;
+
+      const body = msg.getPlainBody();
+      const attachments = obterAnexos(msg);
+      const linksDrive = extrairLinksDrive(body);
+      const subject = msg.getSubject();
+
+      Logger.log('--- Email encontrado ---');
+      Logger.log('De: ' + fromClean);
+      Logger.log('Assunto: ' + subject);
+      Logger.log('Anexos: ' + attachments.length);
+      Logger.log('Links Drive: ' + linksDrive.length);
+      if (attachments.length > 0) {
+        Logger.log('Nomes dos anexos: ' + attachments.map(a => a.getName()).join(', '));
       }
-    })();
-  </script>
-</body>
-</html>
+      if (linksDrive.length > 0) {
+        Logger.log('Links: ' + linksDrive.join(', '));
+      }
+      Logger.log('Corpo: ' + (body || '').substring(0, 200));
+
+      if (attachments.length === 0 && linksDrive.length === 0) {
+        Logger.log('Sem anexos e sem links do Drive, pulando.');
+        return;
+      }
+
+      const nomes = extrairNomes(body);
+      Logger.log('Nomes extraídos: ' + JSON.stringify(nomes));
+
+      if (nomes.length === 0) {
+        Logger.log('Nenhum nome extraído do corpo, pulando.');
+        return;
+      }
+
+      const grupo = nomes.length > 1 ? Utilities.getUuid().split('-')[0] : null;
+      let pastaGrupo = null;
+
+      if (nomes.length > 1) {
+        for (const nome of nomes) {
+          const existente = buscarClientePorNome(nome);
+          if (existente && existente.pastaDrive) {
+            pastaGrupo = existente.pastaDrive;
+            Logger.log('Pasta existente do grupo: ' + pastaGrupo);
+            break;
+          }
+        }
+        if (!pastaGrupo) {
+          const primeirosNomes = nomes.map(n => n.split(' ')[0]).join(' e ');
+          const parentFolder = DriveApp.getFolderById(CONFIG.DRIVE_FOLDER_ID);
+          const existing = parentFolder.getFoldersByName(primeirosNomes);
+          const folder = existing.hasNext() ? existing.next() : parentFolder.createFolder(primeirosNomes);
+          pastaGrupo = folder.getUrl();
+          Logger.log('Pasta para grupo: ' + primeirosNomes);
+        }
+      }
+
+      nomes.forEach(nome => {
+        const clienteExistente = buscarClientePorNome(nome);
+
+        if (clienteExistente) {
+          Logger.log('Cliente existente: ' + nome);
+          if (!pastaGrupo) pastaGrupo = clienteExistente.pastaDrive;
+        } else {
+          Logger.log('Novo cliente: ' + nome);
+          const result = adicionarCliente({
+            nomeCompleto: nome,
+            grupo: grupo || '',
+            status: 'Em andamento',
+            pastaDrive: pastaGrupo || ''
+          });
+
+          if (result.success) {
+            if (!pastaGrupo) pastaGrupo = result.pastaUrl;
+            Logger.log('Criado. Pasta: ' + (pastaGrupo || result.pastaUrl));
+          } else {
+            Logger.log('Erro: ' + JSON.stringify(result));
+          }
+        }
+      });
+
+      // Salvar arquivos UMA vez na pasta
+      if (pastaGrupo) {
+        if (attachments.length > 0) salvarAnexosNaPasta(pastaGrupo, attachments);
+        if (linksDrive.length > 0) salvarLinksDrivePasta(pastaGrupo, linksDrive);
+        Logger.log('Arquivos salvos na pasta: ' + pastaGrupo);
+      }
+
+      msg.markRead();
+      processados++;
+    });
+  });
+
+  Logger.log('=== Finalizado. Emails processados: ' + processados + ' ===');
+}
