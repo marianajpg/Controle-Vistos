@@ -74,7 +74,7 @@
 
     .table-wrapper {
       background: var(--surface); border-radius: var(--radius);
-      border: 1px solid var(--border); overflow: hidden;
+      border: 1px solid var(--border); overflow-x: auto;
     }
     table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
     th {
@@ -144,8 +144,28 @@
     }
 
     .loading { text-align: center; padding: 3rem; color: var(--text-muted); }
-    .action-btns { display: flex; gap: 0.4rem; }
+    .action-btns { position: relative; }
     .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.72rem; border-radius: 6px; }
+    .dots-btn {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      color: var(--text); cursor: pointer; padding: 0.3rem 0.6rem; font-size: 1.1rem;
+      line-height: 1; transition: background 0.2s;
+    }
+    .dots-btn:hover { background: var(--surface-hover); }
+    .action-menu {
+      display: none; position: fixed;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 0.4rem 0; min-width: 150px; z-index: 60;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+    }
+    .action-menu.open { display: block; }
+    .action-menu button {
+      display: block; width: 100%; text-align: left; padding: 0.5rem 1rem;
+      background: none; border: none; color: var(--text); font-size: 0.8rem;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+    }
+    .action-menu button:hover { background: var(--surface-hover); }
+    .action-menu button.danger { color: var(--danger); }
 
     .badge-role {
       padding: 0.35rem 1rem; border-radius: 20px; font-size: 0.72rem;
@@ -209,33 +229,13 @@
       .container { padding: 1rem; }
       .actions { gap: 0.6rem; }
       .search { width: 100%; order: -1; }
-      .table-wrapper { border-radius: 8px; }
-      table { font-size: 0.75rem; }
-      th, td { padding: 0.6rem 0.5rem; }
+      .table-wrapper { border-radius: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      table { font-size: 0.7rem; min-width: 700px; }
+      th, td { padding: 0.5rem 0.4rem; white-space: nowrap; }
       .modal { padding: 1.5rem; width: 95%; border-radius: 12px; }
       .modal h2 { font-size: 1.1rem; margin-bottom: 1.2rem; }
       .btn { padding: 0.55rem 1rem; font-size: 0.8rem; }
       .config-section { padding: 1.2rem; }
-
-      /* Card layout para tabela em mobile */
-      table, thead, tbody, th, td, tr { display: block; }
-      thead { display: none; }
-      tr {
-        margin-bottom: 0.8rem; padding: 1rem; border-radius: 10px;
-        background: var(--surface); border: 1px solid var(--border);
-      }
-      td {
-        display: flex; justify-content: space-between; align-items: center;
-        padding: 0.4rem 0; border: none; font-size: 0.8rem;
-      }
-      td::before {
-        content: attr(data-label);
-        font-weight: 600; color: var(--text-muted); font-size: 0.7rem;
-        text-transform: uppercase; letter-spacing: 0.3px; margin-right: 1rem;
-      }
-      td:first-child { padding-top: 0; }
-      td:last-child { padding-bottom: 0; }
-      .action-btns { justify-content: flex-end; }
     }
   </style>
 </head>
@@ -253,8 +253,10 @@
       <p>Insira sua chave de acesso para continuar</p>
       <span class="login-error" id="loginError">Chave invalida. Tente novamente.</span>
       <div style="position:relative;">
-        <input type="password" id="loginKey" placeholder="Chave de acesso" onkeydown="if(event.key==='Enter')fazerLogin()" style="padding-right:2.5rem;">
-        <span onclick="toggleSenha()" style="position:absolute;right:0.8rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);font-size:0.85rem;user-select:none;" id="toggleSenhaBtn">mostrar</span>
+        <input type="password" id="loginKey" placeholder="Chave de acesso" onkeydown="if(event.key==='Enter')fazerLogin()" style="padding-right:2.5rem; align-items:center; display: flex;">
+        <span onclick="toggleSenha()" style="position:absolute;right:0.8rem;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--text-muted);display:flex;" id="toggleSenhaBtn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        </span>
       </div>
       <button class="btn btn-primary" style="width:100%;padding:0.75rem;" onclick="fazerLogin()">Entrar</button>
     </div>
@@ -307,6 +309,7 @@
       <div class="form-group">
         <label>Status</label>
         <select id="fStatus">
+          <option>Início</option>
           <option>Em andamento</option>
           <option>Restam Documentos</option>
           <option>Cadastrar no Casv</option>
@@ -333,6 +336,31 @@
       <div class="form-actions">
         <button class="btn btn-primary" onclick="salvar()">Salvar</button>
         <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Arquivar DS-160 -->
+  <div class="modal-overlay" id="modalArquivar">
+    <div class="modal">
+      <h2>Arquivar DS-160</h2>
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1.2rem;">O formulário, código e confirmação atuais serão salvos no histórico e limpos do cliente.</p>
+      <input type="hidden" id="arquivarClienteId">
+      <div class="form-group"><label>Justificativa</label><textarea id="fJustificativa" placeholder="Motivo da descontinuação..."></textarea></div>
+      <div class="form-actions">
+        <button class="btn btn-danger" onclick="confirmarArquivar()">Arquivar</button>
+        <button class="btn btn-secondary" onclick="document.getElementById('modalArquivar').classList.remove('active')">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Histórico -->
+  <div class="modal-overlay" id="modalHistorico">
+    <div class="modal" style="max-width:650px;">
+      <h2 id="historicoTitle">Histórico DS-160</h2>
+      <div id="historicoContent" style="margin-top:1rem;"></div>
+      <div class="form-actions" style="margin-top:1.5rem;">
+        <button class="btn btn-secondary" onclick="document.getElementById('modalHistorico').classList.remove('active')">Fechar</button>
       </div>
     </div>
   </div>
@@ -424,10 +452,10 @@
       const btn = document.getElementById('toggleSenhaBtn');
       if (input.type === 'password') {
         input.type = 'text';
-        btn.textContent = 'ocultar';
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
       } else {
         input.type = 'password';
-        btn.textContent = 'mostrar';
+        btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
       }
     }
 
@@ -478,8 +506,13 @@
           <td data-label="Data">${formatDate(c.dataEntrada)}</td>
           <td data-label="Pasta" class="link-cell">${c.pastaDrive ? '<a href="'+c.pastaDrive+'" target="_blank">Abrir</a>' : ''}</td>
           ${isAdmin ? `<td data-label="Acoes" class="action-btns">
-            <button class="btn btn-primary btn-sm" onclick="editar('${c.id}')">Editar</button>
-            <button class="btn btn-danger btn-sm" onclick="excluir('${c.id}')">X</button>
+            <button class="dots-btn" onclick="toggleMenu(event, '${c.id}')">&#8942;</button>
+            <div class="action-menu" id="menu-${c.id}">
+              <button onclick="editar('${c.id}')">Editar</button>
+              <button onclick="verHistorico('${c.id}','${(c.nomeCompleto||'').replace(/'/g,"\\'")}')">Histórico</button>
+              <button onclick="abrirArquivar('${c.id}')">Arquivar DS-160</button>
+              <button class="danger" onclick="excluir('${c.id}')">Excluir</button>
+            </div>
           </td>` : ''}
         </tr>
       `).join('');
@@ -653,6 +686,67 @@
     }
 
     // ============================================
+    // ARQUIVAMENTO DS-160
+    // ============================================
+    function abrirArquivar(clienteId) {
+      document.getElementById('arquivarClienteId').value = clienteId;
+      document.getElementById('fJustificativa').value = '';
+      document.getElementById('modalArquivar').classList.add('active');
+    }
+
+    async function confirmarArquivar() {
+      const clienteId = document.getElementById('arquivarClienteId').value;
+      const justificativa = document.getElementById('fJustificativa').value;
+      document.getElementById('modalArquivar').classList.remove('active');
+      showLoader();
+      try {
+        const res = await fetch(`${API_URL}?action=arquivarDS160&token=${encodeURIComponent(key)}`, {
+          method: 'POST',
+          body: JSON.stringify({ clienteId, justificativa }),
+        });
+        const result = await res.json();
+        if (result.success) {
+          toast('Formulário arquivado!');
+          await carregarDados();
+        } else {
+          toast(result.error || 'Erro ao arquivar', true);
+          hideLoader();
+        }
+      } catch (e) {
+        toast('Erro de conexão', true);
+        hideLoader();
+      }
+    }
+
+    async function verHistorico(clienteId, nome) {
+      document.getElementById('historicoTitle').textContent = `Histórico - ${nome}`;
+      document.getElementById('historicoContent').innerHTML = '<div class="spinner" style="margin:1rem auto;"></div>';
+      document.getElementById('modalHistorico').classList.add('active');
+
+      try {
+        const res = await fetch(`${API_URL}?action=listarHistorico&token=${encodeURIComponent(key)}&clienteId=${clienteId}`);
+        const lista = await res.json();
+        if (!Array.isArray(lista) || lista.length === 0) {
+          document.getElementById('historicoContent').innerHTML = '<p style="color:var(--text-muted);font-size:0.85rem;">Nenhum formulário arquivado.</p>';
+          return;
+        }
+        document.getElementById('historicoContent').innerHTML = lista.map(h => `
+          <div style="border:1px solid var(--border);border-radius:8px;padding:1rem;margin-bottom:0.8rem;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:0.5rem;">
+              <strong style="font-size:0.8rem;">Código: ${h.codigo || '—'}</strong>
+              <span style="color:var(--text-muted);font-size:0.75rem;">${h.dataArquivamento || ''}</span>
+            </div>
+            <div style="font-size:0.8rem;margin-bottom:0.3rem;">DS-160: ${h.formularioDS160 ? '<a href="'+h.formularioDS160+'" target="_blank" style="color:var(--accent-hover);">Ver</a>' : '—'}</div>
+            <div style="font-size:0.8rem;margin-bottom:0.3rem;">Confirmação: ${h.confirmacao ? '<a href="'+h.confirmacao+'" target="_blank" style="color:var(--accent-hover);">Ver</a>' : '—'}</div>
+            <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;font-style:italic;">${h.justificativa || 'Sem justificativa'}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        document.getElementById('historicoContent').innerHTML = '<p style="color:var(--danger);">Erro ao carregar histórico.</p>';
+      }
+    }
+
+    // ============================================
     // REMETENTES (admin only)
     // ============================================
     function toggleConfig() {
@@ -697,6 +791,35 @@
     }
 
     // ============================================
+    // MENU DE AÇÕES
+    // ============================================
+    function toggleMenu(e, id) {
+      e.stopPropagation();
+      const menu = document.getElementById('menu-' + id);
+      const wasOpen = menu.classList.contains('open');
+
+      // Fechar todos
+      document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
+
+      if (!wasOpen) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        menu.style.top = (rect.bottom + 4) + 'px';
+        menu.style.left = (rect.right - 150) + 'px';
+
+        // Se não cabe embaixo, abre pra cima
+        menu.classList.add('open');
+        const menuRect = menu.getBoundingClientRect();
+        if (menuRect.bottom > window.innerHeight) {
+          menu.style.top = (rect.top - menuRect.height - 4) + 'px';
+        }
+      }
+    }
+
+    document.addEventListener('click', () => {
+      document.querySelectorAll('.action-menu.open').forEach(m => m.classList.remove('open'));
+    });
+
+    // ============================================
     // UTILS
     // ============================================
     function showLoader() {
@@ -728,6 +851,8 @@
       document.getElementById('loginOverlay').style.display = 'flex';
       document.getElementById('loginKey').focus();
     }
+
+
 
     // ============================================
     // TEMA
